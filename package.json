@@ -71,7 +71,7 @@
       },
       "[development]": {
         "db": {
-          "kind": "hana-cloud"
+          "kind": "sqlite"
         },
         "auth": {
           "kind": "mocked-auth",
