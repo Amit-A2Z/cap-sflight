@@ -6,7 +6,7 @@ cd "$(dirname "$(dirname "$0")")"
 npm install --no-save yaml
 
 function value() {
-    node ./scripts/value.js "$1"
+  node ./scripts/value.js "$1"
 }
 
 NAME="$1"
@@ -18,7 +18,8 @@ if [ "$NAME" == "" ]; then
   fi
 fi
 
-SECRET_HEADER="$(cat <<EOF
+SECRET_HEADER="$(
+  cat <<EOF
 apiVersion: v1
 kind: Secret
 metadata:
@@ -32,12 +33,12 @@ EOF
 
 cf 2>/dev/null >/dev/null service $NAME || cf create-service hana hdi-shared $NAME
 while true; do
-    STATUS="$(cf 2>/dev/null service $NAME | grep status: | head -n 1)"
-    echo $STATUS
-    if [[ "$STATUS" = *succeeded* ]]; then
-        break
-    fi
-    sleep 1
+  STATUS="$(cf 2>/dev/null service $NAME | grep status: | head -n 1)"
+  echo $STATUS
+  if [[ "$STATUS" = *succeeded* ]]; then
+    break
+  fi
+  sleep 1
 done
 
 cf create-service-key $NAME $NAME-key

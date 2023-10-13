@@ -18,8 +18,8 @@ cf deploy ${INPUT_MTAFILE} -f
 
 if [ ! -z "${INPUT_FINDURL_COMMAND}" ]; then
   # echo "Find URL command: ${INPUT_FINDURL_COMMAND}, regex: ${INPUT_FINDURL_REGEX}"
-  res=`${INPUT_FINDURL_COMMAND}`
-  url=`echo "${res}" | grep -o "${INPUT_FINDURL_REGEX}"`
+  res=$(${INPUT_FINDURL_COMMAND})
+  url=$(echo "${res}" | grep -o "${INPUT_FINDURL_REGEX}")
   echo "URL: $url"
   echo "::set-output name=url::$url"
 fi

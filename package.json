@@ -17,16 +17,20 @@
     "travel-analytics": "cds watch --open travel_analytics/webapp/index.html?sap-ui-xx-viewCache=false"
   },
   "dependencies": {
-    "@sap/cds": ">=5.4.5",
-    "@sap/xssec": "^3.2.7",
-    "express": "^4",
-    "hdb": "^0.19.1",
+    "@sap/cds": "^7.3.0",
+    "@sap/xssec": "^3.3.5",
+    "express": "^4.18.2",
+    "@sap/hdbext": "^8.0.0",
+    "@sap/hana-client": "2.18.24",
+    "@sap/cds-dk": "7.3.0",
+    "@sap/cds-fiori": "1.1.0",
+    "@sap/cds-hana": "2.0.0",
     "passport": "^0.6.0"
   },
   "devDependencies": {
-    "@sap/ux-specification": "UI5-1.108",
-    "axios": "^1",
-    "chai": "^4.3.0",
+    "@sap/ux-specification": "^1.108.16",
+    "axios": "^1.5.1",
+    "chai": "^4.3.10",
     "chai-as-promised": "^7.1.1",
     "chai-subset": "^1.6.0",
     "cross-spawn": "^7.0.3",

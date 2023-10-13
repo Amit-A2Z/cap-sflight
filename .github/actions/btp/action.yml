@@ -1,4 +1,4 @@
-name: 'BTP'
+name: "BTP"
 description: Performs BTP operations
 inputs:
   cli_url:

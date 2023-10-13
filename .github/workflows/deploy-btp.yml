@@ -16,7 +16,7 @@ on:
       cf-api:
         type: string
         required: false
-        default: 'https://api.cf.eu12.hana.ondemand.com'
+        default: "https://api.cf.eu12.hana.ondemand.com"
       cf-org:
         type: string
         required: false
@@ -31,7 +31,7 @@ on:
         description: relative path to dir with mta.yaml
         type: string
         required: false
-        default: '.'
+        default: "."
       mtar-dir:
         description: path to dir with mtar
         type: string
@@ -55,7 +55,6 @@ on:
         value: ${{ jobs.deployment.outputs.ui_app_url }}
 
 jobs:
-
   deployment:
     name: To BTP
     runs-on: ubuntu-latest
@@ -74,32 +73,32 @@ jobs:
       ui_app_url: ${{ steps.deploy.outputs.url }}
 
     steps:
-    - uses: actions/checkout@v2
-    - uses: actions/setup-node@v2
-      with:
-        node-version: 16
-    - uses: actions/cache@v2
-      id: cache
-      with:
-        path: ${{ inputs.mtar-dir }}/${{ inputs.mtar-file }}
-        key: ${{ runner.os }}-${{ github.head_ref || github.ref_name }}-${{ hashFiles('_i18n/**','app/**','db/**','srv/**','*.json','**/mta.yaml','pom.xml') }}
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v2
+        with:
+          node-version: 16
+      - uses: actions/cache@v2
+        id: cache
+        with:
+          path: ${{ inputs.mtar-dir }}/${{ inputs.mtar-file }}
+          key: ${{ runner.os }}-${{ github.head_ref || github.ref_name }}-${{ hashFiles('_i18n/**','app/**','db/**','srv/**','*.json','**/mta.yaml','pom.xml') }}
 
-    - name: MTA build
-      if: steps.cache.outputs.cache-hit != 'true'
-      run: npx mbt build -s ${{ inputs.mta-source-dir }} -t ${{ inputs.mtar-dir }} --mtar ${{ inputs.mtar-file }}
+      - name: MTA build
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: npx mbt build -s ${{ inputs.mta-source-dir }} -t ${{ inputs.mtar-dir }} --mtar ${{ inputs.mtar-file }}
 
-    - name: CF Deploy
-      id: deploy
-      uses: ./.github/actions/cf-deploy
-      with:
-        createspace: true
-        mtafile: ${{ inputs.mtar-dir }}/${{ inputs.mtar-file }}
-        findurl_command: 'cf html5-list -di sflight-destination-service -u'
+      - name: CF Deploy
+        id: deploy
+        uses: ./.github/actions/cf-deploy
+        with:
+          createspace: true
+          mtafile: ${{ inputs.mtar-dir }}/${{ inputs.mtar-file }}
+          findurl_command: "cf html5-list -di sflight-destination-service -u"
 
-    - name: Assign Roles
-      uses: ./.github/actions/btp
-      with:
-        cli_url: ${{ inputs.btp-cli-url }}
-        subdomain: ${{ inputs.btp-subdomain }}
-        subaccount_id: ${{ inputs.btp-subaccount-id }}
-        role_collection: ${{ inputs.role-collection }}
+      - name: Assign Roles
+        uses: ./.github/actions/btp
+        with:
+          cli_url: ${{ inputs.btp-cli-url }}
+          subdomain: ${{ inputs.btp-subdomain }}
+          subaccount_id: ${{ inputs.btp-subaccount-id }}
+          role_collection: ${{ inputs.role-collection }}

@@ -15,7 +15,7 @@ function printProperty(file) {
     let valuesYaml;
     try {
         valuesYaml = fs.readFileSync(file, 'utf-8');
-    } catch(error) {
+    } catch (error) {
         return false;
     }
     const values = yaml.parse(valuesYaml);

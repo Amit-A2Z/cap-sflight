@@ -16,7 +16,7 @@ build-parameters:
 modules:
   # --------------------- SERVER MODULE ------------------------
   - name: sflight-srv
-  # ------------------------------------------------------------
+    # ------------------------------------------------------------
     type: nodejs
     path: gen/srv
     requires:
@@ -32,7 +32,7 @@ modules:
 
   # -------------------- SIDECAR MODULE ------------------------
   - name: sflight-db-deployer
-  # ------------------------------------------------------------
+    # ------------------------------------------------------------
     type: hdb
     path: gen/db
     parameters:
@@ -45,7 +45,7 @@ modules:
 
   # ------------------ APPLICATION CONTENT ---------------------
   - name: sflight-appcontent
-  # ------------------------------------------------------------
+    # ------------------------------------------------------------
     type: com.sap.application.content
     path: app
     requires:
@@ -67,7 +67,7 @@ modules:
 
   # ------------- APPLICATION: TRAVEL PROCESSOR ----------------
   - name: sflight-app-travel-processor
-  # ------------------------------------------------------------
+    # ------------------------------------------------------------
     type: html5
     path: app/travel_processor
     build-parameters:
@@ -80,7 +80,7 @@ modules:
 
   # ------------- APPLICATION: TRAVEL ANALYTICS ----------------
   - name: sflight-app-travel-analytics
-  # ------------------------------------------------------------
+    # ------------------------------------------------------------
     type: html5
     path: app/travel_analytics
     build-parameters:
@@ -93,7 +93,7 @@ modules:
 
   # ------------------ DESTINATION CONTENT ---------------------
   - name: sflight-destinationcontent
-  # ------------------------------------------------------------
+    # ------------------------------------------------------------
     type: com.sap.application.content
     build-parameters:
       no-source: true
@@ -127,7 +127,7 @@ modules:
 resources:
   # ------------------------------------------------------------
   - name: sflight-db
-  # ------------------------------------------------------------
+    # ------------------------------------------------------------
     type: com.sap.xs.hdi-container
     parameters:
       service: hana
@@ -137,7 +137,7 @@ resources:
 
   # ------------------------------------------------------------
   - name: sflight-uaa
-  # ------------------------------------------------------------
+    # ------------------------------------------------------------
     type: org.cloudfoundry.managed-service
     parameters:
       service: xsuaa
@@ -147,22 +147,22 @@ resources:
         xsappname: sflight-${space}
         tenant-mode: dedicated
         role-collections:
-          - name: 'sflight-reviewer-${space}'
+          - name: "sflight-reviewer-${space}"
             description: Review travels
             role-template-references:
               - $XSAPPNAME.reviewer
-          - name: 'sflight-processor-${space}'
+          - name: "sflight-processor-${space}"
             description: Process travels
             role-template-references:
               - $XSAPPNAME.processor
-          - name: 'sflight-admin-${space}'
+          - name: "sflight-admin-${space}"
             description: Manage travels
             role-template-references:
               - $XSAPPNAME.admin
 
   # ------------------------------------------------------------
   - name: sflight-html5-repo-runtime
-  # ------------------------------------------------------------
+    # ------------------------------------------------------------
     type: org.cloudfoundry.managed-service
     parameters:
       service: html5-apps-repo
@@ -170,7 +170,7 @@ resources:
 
   # ------------------------------------------------------------
   - name: sflight-html5-repo-host
-  # ------------------------------------------------------------
+    # ------------------------------------------------------------
     type: org.cloudfoundry.managed-service
     parameters:
       service: html5-apps-repo
@@ -178,7 +178,7 @@ resources:
 
   # ------------------------------------------------------------
   - name: sflight-destination-service
-  # ------------------------------------------------------------
+    # ------------------------------------------------------------
     type: org.cloudfoundry.managed-service
     requires:
       - name: srv-api
@@ -199,4 +199,3 @@ resources:
                 ProxyType: Internet
                 HTML5.ForwardAuthToken: true
                 HTML5.DynamicDestination: true
-

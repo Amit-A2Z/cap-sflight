@@ -5,10 +5,10 @@ name: Node.js CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
-    types: [ labeled, opened, synchronize, reopened ]
+    branches: [main]
+    types: [labeled, opened, synchronize, reopened]
 
 jobs:
   build:
@@ -19,38 +19,38 @@ jobs:
         node-version: [18.x, 16.x, 14.x]
 
     steps:
-    - uses: actions/checkout@v2
-    - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v2
-      with:
-        node-version: ${{ matrix.node-version }}
-    - run: npm ci
-    - run: npm run lint
-    - run: npm run build --if-present
-    - run: npm run test
-    - run: npm run test:mocha
+      - uses: actions/checkout@v2
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v2
+        with:
+          node-version: ${{ matrix.node-version }}
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build --if-present
+      - run: npm run test
+      - run: npm run test:mocha
 
-    - name: Run integration tests - Manage Travels
-      if: ${{ matrix.node-version != '14.x' }}
-      working-directory: ./app/travel_processor
-      run: |
-        npm ci
-        npm run test:node -- --ci
+      - name: Run integration tests - Manage Travels
+        if: ${{ matrix.node-version != '14.x' }}
+        working-directory: ./app/travel_processor
+        run: |
+          npm ci
+          npm run test:node -- --ci
 
-    - name: Run integration tests - Analyze Bookings
-      if: ${{ matrix.node-version != '14.x' }}
-      working-directory: ./app/travel_analytics
-      run: |
-        npm ci
-        npm run test:node -- --ci
+      - name: Run integration tests - Analyze Bookings
+        if: ${{ matrix.node-version != '14.x' }}
+        working-directory: ./app/travel_analytics
+        run: |
+          npm ci
+          npm run test:node -- --ci
 
   deployment:
     name: Deploy
-    if: ${{ github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'deploy') }}  # run only if label is set
+    if: ${{ github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'deploy') }} # run only if label is set
     uses: ./.github/workflows/deploy-btp.yml
     with:
       cf-space: staging-${{ github.head_ref || github.ref_name }}
-      role-collection: sflight-admin-staging-${{ github.head_ref || github.ref_name }}  # must match to mta.yaml
+      role-collection: sflight-admin-staging-${{ github.head_ref || github.ref_name }} # must match to mta.yaml
     secrets:
       username: ${{ secrets.CF_USERNAME }}
       password: ${{ secrets.CF_PASSWORD }}
@@ -61,6 +61,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: deployment
     steps:
-    - name: More UI tests
-      run: |
-        echo ${{ needs.deployment.outputs.ui_app_url }}
+      - name: More UI tests
+        run: |
+          echo ${{ needs.deployment.outputs.ui_app_url }}
