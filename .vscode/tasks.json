@@ -1,0 +1,26 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "build.mta",
+			"label": "Build ",
+			"taskType": "Build",
+			"projectPath": "/home/user/projects/cap-sflight",
+			"extensions": []
+		},
+		{
+			"type": "deploy.mta.cf",
+			"label": "Deploy to Cloud Foundry ",
+			"taskType": "Deploy",
+			"mtarPath": "/home/user/projects/cap-sflight/mta_archives/cap-sflight_0.0.1.mtar",
+			"extensions": [],
+			"dependsOn": [
+				"Build "
+			],
+			"cfTarget": "cap-sflight-jco",
+			"cfEndpoint": "https://api.cf.us10-001.hana.ondemand.com",
+			"cfOrg": "88e6f5c5trial",
+			"cfSpace": "dev"
+		}
+	]
+}
