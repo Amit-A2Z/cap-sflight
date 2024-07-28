@@ -17,10 +17,10 @@
     "travel-analytics": "cds watch --open travel_analytics/webapp/index.html?sap-ui-xx-viewCache=false"
   },
   "dependencies": {
-    "@sap/cds": ">=7.0.0",
-    "@sap/xssec": "^3.2.7",
+    "@sap/cds": ">=8.0.0",
+    "@sap/xssec": "^4",
     "express": "^4",
-    "hdb": "^0.19.1"
+    "@cap-js/hana": "^1"
   },
   "devDependencies": {
     "@cap-js/sqlite": "^1.0.1",
@@ -33,7 +33,7 @@
     "http-proxy": "^1.18.1",
     "jest": "^29.0.2",
     "qunit": "^2.9.3",
-    "eslint": "^8.57.0"
+    "eslint": "^9"
   },
   "cds": {
     "requires": {
@@ -78,8 +78,8 @@
     "log": {
       "service": true
     },
-    "features": {
-      "odata_new_parser": true
+    "fiori": {
+      "wrap_multiple_errors": false
     },
     "build": {
       "[node!]": {
@@ -109,6 +109,9 @@
           }
         ]
       }
+    },
+    "sql" : {
+      "native_hana_associations" : false
     }
   },
   "jest": {
