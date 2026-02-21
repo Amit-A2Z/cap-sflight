@@ -145,6 +145,106 @@ that HDI container are stored locally on your filesystem (default-env.json).
 
 The deployment to Kyma Runtime is explained in file [README-Kyma.md](./README-Kyma.md).
 
+---
+
+## AI-Powered Development with MCP
+
+This project includes an **MCP (Model Context Protocol) server** that lets AI assistants like Claude query your flight data, inspect the data model, and access the HANA database — all through natural language.
+
+### What can you do with it?
+
+Just ask questions in plain English:
+
+> "Show me flights from Frankfurt to New York"
+> "How many bookings were cancelled?"
+> "What does the Travel entity look like?"
+> "Generate an ER diagram of the data model"
+
+The AI picks the right tool, fetches real data from your app, and gives you the answer.
+
+### Quick Start (3 steps)
+
+**1. Clone the MCP server** (in a sibling directory to this project):
+
+```bash
+cd ..
+git clone https://github.com/Amit91-VB/sflight-mcp-server.git
+cd sflight-mcp-server
+npm install
+```
+
+**2. Create `.mcp.json`** in this project's root:
+
+```json
+{
+  "mcpServers": {
+    "sflight": {
+      "command": "node",
+      "args": ["/FULL/PATH/TO/sflight-mcp-server/build/index.js"],
+      "env": {
+        "SFLIGHT_PROJECT_ROOT": "/FULL/PATH/TO/cap-sflight",
+        "SFLIGHT_ODATA_URL": "http://localhost:4004",
+        "SFLIGHT_AUTH_MODE": "none"
+      }
+    }
+  }
+}
+```
+
+> Replace `/FULL/PATH/TO/` with actual paths. The `.mcp.json` file is gitignored (it contains machine-specific paths).
+
+**3. Start the app and Claude Code:**
+
+```bash
+# Terminal 1: Start the CAP app
+cds watch
+
+# Terminal 2: Start Claude Code
+claude
+```
+
+Now ask any question about your flight data!
+
+### Available Tools (12 total)
+
+| Category | Tools | What they do |
+|----------|-------|-------------|
+| **Data Query** (5) | `sflight_query`, `sflight_flights`, `sflight_bookings`, `sflight_travels`, `sflight_stats` | Query flights, bookings, travels with smart filters |
+| **Schema** (3) | `sflight_schema`, `sflight_entity`, `sflight_diagram` | Explore the data model, generate ER diagrams |
+| **HANA** (2) | `sflight_hana_tables`, `sflight_hana_sql` | Query the deployed HANA database |
+| **Project** (2) | `sflight_info`, `sflight_guide` | Project overview, tool recommendations |
+
+### DataService API
+
+The project exposes a read-only **DataService** at `/api/data` with 24 OData entities:
+
+- **Transactional:** Travel, Booking, BookingSupplement
+- **Master Data:** Airline, Airport, Flight, FlightConnection, Passenger, TravelAgency, Supplement
+- **Code Lists:** BookingStatus, TravelStatus, SupplementType
+- **Reference:** Currencies, Countries
+- **Denormalized Views:** FlightSchedule, BookingOverview, TravelSummary
+
+These views are pre-joined for common queries — no `$expand` needed by AI agents.
+
+### Architecture
+
+```mermaid
+graph TB
+    User[You - Ask Questions] --> AI[AI Assistant - Claude Code]
+    AI --> SF[sflight MCP Server - 12 tools]
+    AI --> CAP[cap-tools MCP - 12 tools]
+    AI --> HANA[hana-cli MCP - 111+ tools]
+    SF --> OData[DataService OData API]
+    SF --> CDS[npx cds compile]
+    SF --> CLI[hana-cli CLI]
+    OData --> App[CAP sflight App]
+    CLI --> DB[HANA Database]
+```
+
+For detailed setup instructions (BTP deployment, BAS IDE, default-env.json), see the [sflight-mcp-server README](https://github.com/Amit91-VB/sflight-mcp-server).
+
+---
+
 ## Creating an SAP Fiori App from Scratch
 
 If you want to implement an SAP Fiori app, follow these tutorials:
