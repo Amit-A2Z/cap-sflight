@@ -49,6 +49,7 @@ dist/
 .cdsrc.json
 .cdsrc-private.json
 .cds-services.json
+.mcp.json
 
 # Exclude Helm chart for this example
 /chart
