@@ -1,12 +1,10 @@
-'use strict'
+import eslint_js from '@eslint/js'
+import tseslint from 'typescript-eslint';
+import globals from 'globals'
 
-const eslint_js = require('@eslint/js')
-const tseslint = require('typescript-eslint');
-const globals = require('globals')
-
-module.exports = [
+export default [
   {
-    ignores: ["**/dist/*", "gen/**/*", "@cds-models/**/*", "app/**/*"],
+    ignores: ["**/dist/*", "gen/**/*", "@cds-models/**/*", "app/**/*", "**/*.cjs"],
   },
   // global rules for all files
   eslint_js.configs.recommended,

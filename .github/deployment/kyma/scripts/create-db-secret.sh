@@ -71,7 +71,7 @@ done
 
 cf create-service-key $NAME $NAME-key
 
-node "$(dirname "$1")/scripts/format-kyma-secret.js" -- "$(echo "$SECRET_HEADER")" "$(cf service-key $NAME $NAME-key)" | kubectl apply -f -
+node "$(dirname "$1")/scripts/format-kyma-secret.cjs" -- "$(echo "$SECRET_HEADER")" "$(cf service-key $NAME $NAME-key)" | kubectl apply -f -
 echo
 echo "HANA DB Kubernetes secret '$NAME' created."
 echo

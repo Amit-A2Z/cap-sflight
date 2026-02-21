@@ -2,6 +2,7 @@
   "name": "@capire/sflight",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "CAP flight demo scenario",
   "license": "SAP SAMPLE CODE LICENSE",
   "repository": "https://github.com/SAP-samples/cap-sflight",
@@ -31,7 +32,7 @@
     "@sap/cds-dk" : ">=9.5",
     "@sap/ux-specification": "UI5-1.139",
     "@types/jest": "^30.0.0",
-    "cds-plugin-ui5": "^0.13.1",
+    "cds-plugin-ui5": "^0.16.1",
     "cross-spawn": "^7.0.3",
     "eslint": "^9",
     "http-proxy": "^1.18.1",
@@ -125,16 +126,20 @@
     }
   },
   "jest": {
-    "preset": "ts-jest",
+    "preset": "ts-jest/presets/default-esm",
     "globalSetup": "./test/setup.ts",
     "testEnvironment": "node",
-    "testTimeout": 20000
+    "testTimeout": 20000,
+    "extensionsToTreatAsEsm": [".ts"],
+    "transform": {
+      "^.+\\.ts$": ["ts-jest", { "useESM": true }]
+    }
   },
   "mocha": {
     "node-option": [
       "import=tsx"
     ],
-    "require": "test/setup.ts",
+    "import": "test/setup.ts",
     "spec": "test/**/*.ts",
     "timeout": 20000
   },

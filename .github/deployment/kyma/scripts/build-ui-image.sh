@@ -7,7 +7,7 @@ DIR="$(pwd)/.github"
 npm install --no-save yaml
 
 function value() {
-    node "$DIR/deployment/kyma/scripts/value.js" "$1"
+    node "$DIR/deployment/kyma/scripts/value.cjs" "$1"
 }
 
 function image() {
@@ -38,7 +38,7 @@ for APP in app/*; do
         cp -r "$APP" gen/app
         pushd >/dev/null "gen/$APP"
 
-        node "$DIR/deployment/kyma/scripts/prepareUiFiles.js" $CLOUD_SERVICE $DESTINATIONS
+        node "$DIR/deployment/kyma/scripts/prepareUiFiles.cjs" $CLOUD_SERVICE $DESTINATIONS
         npm install
         npx ui5 build preload --clean-dest --config ui5-deploy.yaml --include-task=generateManifestBundle generateCachebusterInfo
         cd dist

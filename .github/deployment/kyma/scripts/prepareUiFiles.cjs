@@ -158,7 +158,7 @@ function getSrvDestination(destinations) {
   }
 }
 
-if (process.argv[1].endsWith('prepareUiFiles.js')) {
+if (process.argv[1].endsWith('prepareUiFiles.cjs')) {
     // Run in standalone mode
     prepareUiFiles('.', { cloudService: process.argv[2], destinations: process.argv[3] });
 } else {
