@@ -46,7 +46,9 @@ dist/
 # Local dev
 .env
 .values.yaml
+.cdsrc.json
 .cdsrc-private.json
+.cds-services.json
 
 # Exclude Helm chart for this example
 /chart
