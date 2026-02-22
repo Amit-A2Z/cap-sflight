@@ -1,18 +1,1139 @@
-@server = http://localhost:4004
-@alice = Authorization: Basic alice
+##############################################################################
+#  cap-sflight — OData V4 Test Requests
+#
+#  Services:
+#    /processor  — TravelService  (read/write, requires auth)
+#    /api/data   — DataService    (read-only, no auth needed locally)
+#
+#  Run:  cds watch   (starts on http://localhost:4004)
+#  Tool: VS Code REST Client extension (humao.rest-client)
+#
+#  Table of Contents:
+#    §1  AI Challenge Questions (20 natural-language questions)
+#    §2  Simple Entity Reads
+#    §3  Basic Filtering and Sorting
+#    §4  Association Navigation ($expand M:1)
+#    §5  Composition Navigation ($expand 1:N)
+#    §6  Nested Associations (multi-level $expand)
+#    §7  Deep Composition Chains (Travel → Booking → Supplement)
+#    §8  Denormalized Views (pre-joined, flat queries)
+#    §9  Aggregation, Counting, and Grouping
+#    §10 Complex Filters (lambda, contains, date logic)
+#    §11 Projection ($select + $expand combos)
+#    §12 TravelService Queries (processor endpoint, auth required)
+##############################################################################
 
-GET {{server}}/processor/Travel?$filter=TravelID eq 4133
-{{alice}}
+@base = http://localhost:4004
+@data = {{base}}/api/data
+@proc = {{base}}/processor
+@alice = Authorization: Basic alice:
+@content = Content-Type: application/json;IEEE754Compatible=true
+
+# ── Real UUIDs from seed data (for direct-key lookups) ─────────────────────
+@travel1_uuid  = 52657221A8E4645C17002DF03754AB66
+@travel2_uuid  = 53657221A8E4645C17002DF03754AB66
+@travel5_uuid  = 56657221A8E4645C17002DF03754AB66
+@travel8_uuid  = 59657221A8E4645C17002DF03754AB66
+@travel11_uuid = 5C657221A8E4645C17002DF03754AB66
+@travel14_uuid = 5F657221A8E4645C17002DF03754AB66
+@booking1_uuid = 7A757221A8E4645C17002DF03754AB66
+@booking3_uuid = 7C757221A8E4645C17002DF03754AB66
+@booksuppl1_uuid = 4D997221A8E4645C17002DF03754AB66
+
+
+
+##############################################################################
+#  §1  AI CHALLENGE QUESTIONS
+#
+#  These are natural-language questions an AI agent might receive.
+#  Each one requires MULTI-HOP REASONING — the agent cannot just do a
+#  single direct lookup. It must understand the entity relationships,
+#  navigate associations/compositions, and sometimes combine results.
+#
+#  The OData query below each question is ONE way to answer it.
+#  An AI agent would need to figure this out from the data model.
+##############################################################################
+
+
+### Q1: "Which airlines fly between Newark and Miami?"
+#
+# WHY THIS IS HARD: The agent must know EWR = Newark and MIA = Miami,
+# then query FlightConnection (not Flight or Airline directly),
+# and realize it needs to check BOTH directions.
+
+GET {{data}}/FlightConnection?$filter=DepartureAirport_AirportID eq 'EWR' and DestinationAirport_AirportID eq 'MIA' or DepartureAirport_AirportID eq 'MIA' and DestinationAirport_AirportID eq 'EWR'&$expand=to_Airline($select=AirlineID,Name)&$select=AirlineID,ConnectionID,DepartureAirport_AirportID,DestinationAirport_AirportID
+
 ###
 
-GET {{server}}/processor/Travel(TravelUUID='73757221A8E4645C17002DF03754AB66')
-{{alice}}
+
+### Q2: "How many bookings does each airline have?"
+#
+# WHY THIS IS HARD: Requires grouping bookings by carrier, but OData V4
+# doesn't have GROUP BY — the agent must either use $apply or query
+# the denormalized BookingOverview and let the client aggregate.
+
+GET {{data}}/BookingOverview?$select=AirlineID,AirlineName&$orderby=AirlineID
+
 ###
 
-GET {{server}}/processor/Travel/73757221A8E4645C17002DF03754AB66/true
-{{alice}}
+
+### Q3: "Show me canceled bookings on accepted travels"
+#
+# WHY THIS IS HARD: Status mismatch across composition levels.
+# Travel status = 'A' (Accepted) but Booking status = 'X' (Canceled).
+# Agent must filter on TWO different entities simultaneously.
+
+GET {{data}}/BookingOverview?$filter=Status eq 'X'&$select=TravelID,BookingID,AirlineName,CustomerLastName,Status,DepartureCity,ArrivalCity&$orderby=TravelID
+
 ###
 
-GET {{server}}/processor/Travel(TravelUUID='73757221A8E4645C17002DF03754AB66',IsActiveEntity=true)
+
+### Q4: "What is the most expensive trip and which agency handled it?"
+#
+# WHY THIS IS HARD: Requires sorting Travel by TotalPrice descending,
+# then navigating the to_Agency association to get the agency name.
+# Two-step reasoning: find max price → resolve agency.
+
+GET {{data}}/Travel?$orderby=TotalPrice desc&$top=1&$expand=to_Agency($select=Name,City,CountryCode_code)&$select=TravelID,TotalPrice,CurrencyCode_code,Description
+
+###
+
+
+### Q5: "Which customers from Germany have booked international flights?"
+#
+# WHY THIS IS HARD: 4-level reasoning chain:
+# Passenger(Country=DE) → Booking → Flight → Connection → DestinationAirport
+# Agent must realize "international" means destination country ≠ DE,
+# and chain through multiple associations.
+
+GET {{data}}/BookingOverview?$filter=DepartureCity ne ArrivalCity&$select=CustomerID,CustomerFirstName,CustomerLastName,DepartureCity,ArrivalCity,AirlineName&$orderby=CustomerLastName&$top=20
+
+###
+
+
+### Q6: "How many available seats are on flights from San Francisco?"
+#
+# WHY THIS IS HARD: Agent needs to know SFO = San Francisco,
+# use the FlightSchedule view (which has computed AvailableSeats),
+# and filter by DepartureAirportID (not city name directly).
+
+GET {{data}}/FlightSchedule?$filter=DepartureAirportID eq 'SFO'&$select=AirlineName,ConnectionID,FlightDate,DepartureCity,ArrivalCity,MaximumSeats,OccupiedSeats,AvailableSeats&$orderby=FlightDate
+
+###
+
+
+### Q7: "What meals and beverages can I order as booking supplements?"
+#
+# WHY THIS IS HARD: Agent must know supplement types (BV=Beverage, ML=Meal),
+# query the Supplement entity with the right type codes,
+# and present them in a user-friendly way.
+
+GET {{data}}/Supplement?$filter=Type_code eq 'ML' or Type_code eq 'BV'&$expand=Type($select=name)&$select=SupplementID,Description,Price,CurrencyCode_code,Type_code&$orderby=Type_code,Price
+
+###
+
+
+### Q8: "Find travels where the booking fee is more than 10% of the total price"
+#
+# WHY THIS IS HARD: Requires a computed comparison between two fields
+# on the same entity. OData V4 doesn't natively support cross-field
+# arithmetic in $filter — agent must find a workaround or use a view.
+# Best approach: fetch both fields and compute client-side.
+
+GET {{data}}/TravelSummary?$select=TravelID,BookingFee,TotalPrice,CurrencyCode,AgencyName,Status&$filter=TotalPrice gt 0&$orderby=TotalPrice desc
+
+###
+
+
+### Q9: "Which flight routes are longer than 5000 km?"
+#
+# WHY THIS IS HARD: Distance is on FlightConnection, not Flight.
+# Agent must pick the right entity and know DistanceUnit is KM.
+
+GET {{data}}/FlightConnection?$filter=Distance gt 5000&$expand=DepartureAirport($select=City,CountryCode_code),DestinationAirport($select=City,CountryCode_code),to_Airline($select=Name)&$select=AirlineID,ConnectionID,Distance,DistanceUnit,DepartureTime,ArrivalTime&$orderby=Distance desc
+
+###
+
+
+### Q10: "What supplements were ordered on the 'Visiting Anna' trip?"
+#
+# WHY THIS IS HARD: Agent must first find the Travel by description
+# ("Visiting Anna"), then traverse the composition chain:
+# Travel → Booking → BookingSupplement → Supplement
+# That's 3 hops deep through compositions + association.
+
+GET {{data}}/Travel?$filter=contains(Description,'Visiting Anna')&$expand=to_Booking($expand=to_BookSupplement($expand=to_Supplement($select=SupplementID,Description,Price)))&$select=TravelID,Description
+
+###
+
+
+### Q11: "Show me flights that are more than 90% full"
+#
+# WHY THIS IS HARD: Requires computing OccupiedSeats/MaximumSeats > 0.9
+# OData doesn't support division in $filter. Agent must use the
+# FlightSchedule view which has AvailableSeats as a computed field,
+# and calculate: AvailableSeats < MaximumSeats * 0.1
+
+GET {{data}}/FlightSchedule?$filter=AvailableSeats lt 30&$select=AirlineName,ConnectionID,FlightDate,DepartureCity,ArrivalCity,PlaneType,MaximumSeats,OccupiedSeats,AvailableSeats&$orderby=AvailableSeats
+
+###
+
+
+### Q12: "Which travel agencies have customers who booked with Green Albatros?"
+#
+# WHY THIS IS HARD: Cross-entity reasoning across 3 entities:
+# TravelAgency ← Travel → Booking → Carrier(GA)
+# No single entity has both agency and airline. Agent must
+# go through TravelSummary to get agencies, then cross-reference
+# with BookingOverview to find which travels used GA.
+
+GET {{data}}/BookingOverview?$filter=AirlineID eq 'GA'&$select=TravelID,AirlineName,CustomerLastName
+
+###
+
+
+### Q13: "Compare the number of open vs canceled vs accepted travels"
+#
+# WHY THIS IS HARD: Requires aggregation by status. OData doesn't
+# natively GROUP BY in $filter. Agent needs $apply or must
+# make 3 separate $count queries and combine.
+
+GET {{data}}/Travel/$count?$filter=TravelStatus_code eq 'O'
+
+###
+
+GET {{data}}/Travel/$count?$filter=TravelStatus_code eq 'A'
+
+###
+
+GET {{data}}/Travel/$count?$filter=TravelStatus_code eq 'X'
+
+###
+
+
+### Q14: "Who booked the earliest flight and where were they going?"
+#
+# WHY THIS IS HARD: Agent must sort bookings by FlightDate ascending,
+# get the first one, then resolve the route through:
+# Booking → Flight → Connection → DepartureAirport + DestinationAirport
+# AND the customer through: Booking → to_Customer
+
+GET {{data}}/BookingOverview?$orderby=FlightDate&$top=1&$select=BookingID,FlightDate,CustomerFirstName,CustomerLastName,AirlineName,DepartureCity,ArrivalCity
+
+###
+
+
+### Q15: "Find all passengers who appear on more than one travel"
+#
+# WHY THIS IS HARD: Requires self-join or aggregation logic.
+# Agent must realize Passenger appears on Travel via to_Customer,
+# and count distinct TravelIDs per customer. OData can't do this
+# natively — agent must fetch TravelSummary and deduplicate client-side.
+
+GET {{data}}/TravelSummary?$select=CustomerID,CustomerFirstName,CustomerLastName,TravelID&$orderby=CustomerID,TravelID
+
+###
+
+
+### Q16: "What's the total revenue from bookings on the EWR-MIA route?"
+#
+# WHY THIS IS HARD: Revenue = sum of FlightPrice on bookings.
+# Agent must know EWR→MIA is ConnectionID 1537 on airline SW,
+# filter bookings by that connection, and sum FlightPrice.
+# Requires route knowledge + aggregation.
+
+GET {{data}}/BookingOverview?$filter=DepartureAirportID eq 'EWR' and ArrivalAirportID eq 'MIA'&$select=BookingID,FlightDate,FlightPrice,CurrencyCode,CustomerLastName,Status
+
+###
+
+
+### Q17: "Which plane types does each airline use?"
+#
+# WHY THIS IS HARD: PlaneType is on Flight, not Airline.
+# Agent must join Flight → Airline and extract distinct PlaneType
+# values per airline. No direct entity gives this.
+
+GET {{data}}/FlightSchedule?$select=AirlineID,AirlineName,PlaneType&$orderby=AirlineID,PlaneType
+
+###
+
+
+### Q18: "Find travels created in January 2025 that are still open"
+#
+# WHY THIS IS HARD: Requires date range filtering (ge + le)
+# combined with status filtering. Agent must know createdAt
+# is a timestamp and TravelStatus_code = 'O' means open.
+
+GET {{data}}/TravelSummary?$filter=createdAt ge 2025-01-01T00:00:00Z and createdAt le 2025-01-31T23:59:59Z and Status eq 'O'&$select=TravelID,Description,AgencyName,CustomerLastName,Status,createdAt&$orderby=createdAt
+
+###
+
+
+### Q19: "Which booking supplements cost more than the associated flight?"
+#
+# WHY THIS IS HARD: Requires comparing Price across two composition
+# levels: BookingSupplement.Price vs Booking.FlightPrice.
+# These are on different entities in a parent-child relationship.
+# Agent must fetch both and compare client-side.
+
+GET {{data}}/BookingSupplement?$expand=to_Booking($select=FlightPrice,CurrencyCode_code),to_Supplement($select=Description)&$select=BookingSupplementID,Price,CurrencyCode_code&$top=20
+
+###
+
+
+### Q20: "Give me a complete itinerary for Travel #2 — all flights with
+#        departure/arrival cities, times, passengers, and any extras ordered"
+#
+# WHY THIS IS HARD: This is the ultimate deep-expand query.
+# Agent must navigate the FULL composition tree:
+# Travel → to_Booking → (to_Customer + to_Flight → to_Connection →
+#   DepartureAirport + DestinationAirport) + to_BookSupplement → to_Supplement
+# That's 4+ levels of $expand nesting.
+
+GET {{data}}/Travel?$filter=TravelID eq 2&$expand=to_Customer($select=FirstName,LastName,EMailAddress),to_Agency($select=Name,City),to_Booking($expand=to_Customer($select=FirstName,LastName),to_Carrier($select=Name),to_Flight($select=FlightDate,PlaneType;$expand=to_Connection($select=DepartureTime,ArrivalTime,Distance;$expand=DepartureAirport($select=Name,City),DestinationAirport($select=Name,City))),to_BookSupplement($expand=to_Supplement($select=Description,Price)))&$select=TravelID,BeginDate,EndDate,BookingFee,TotalPrice,CurrencyCode_code,Description
+
+###
+
+
+
+##############################################################################
+#  §2  SIMPLE ENTITY READS
+#
+#  Basic GET operations — single entity, no joins.
+##############################################################################
+
+
+### 2.1 — List all airlines
+GET {{data}}/Airline
+
+###
+
+
+### 2.2 — Get a specific airport by ID
+GET {{data}}/Airport('FRA')
+
+###
+
+
+### 2.3 — List all airports
+GET {{data}}/Airport?$orderby=City
+
+###
+
+
+### 2.4 — Get a specific travel by UUID
+GET {{data}}/Travel(TravelUUID='{{travel1_uuid}}')
+
+###
+
+
+### 2.5 — List all flight connections
+GET {{data}}/FlightConnection
+
+###
+
+
+### 2.6 — List all supplements
+GET {{data}}/Supplement?$orderby=Type_code,SupplementID
+
+###
+
+
+### 2.7 — List booking status codes
+GET {{data}}/BookingStatus
+
+###
+
+
+### 2.8 — List travel status codes
+GET {{data}}/TravelStatus
+
+###
+
+
+### 2.9 — List supplement types
+GET {{data}}/SupplementType
+
+###
+
+
+### 2.10 — List all currencies
+GET {{data}}/Currencies
+
+###
+
+
+### 2.11 — List all countries
+GET {{data}}/Countries
+
+###
+
+
+### 2.12 — Get a specific passenger
+GET {{data}}/Passenger('000001')
+
+###
+
+
+### 2.13 — DataService root (entity set listing)
+GET {{data}}
+
+###
+
+
+
+##############################################################################
+#  §3  BASIC FILTERING AND SORTING
+#
+#  Single-entity queries with $filter, $orderby, $top, $skip, $select.
+##############################################################################
+
+
+### 3.1 — Flights by a specific airline
+GET {{data}}/Flight?$filter=AirlineID eq 'SW'&$orderby=FlightDate&$select=AirlineID,ConnectionID,FlightDate,Price,CurrencyCode_code,PlaneType
+
+###
+
+
+### 3.2 — Passengers with last name "Buchholm"
+GET {{data}}/Passenger?$filter=LastName eq 'Buchholm'&$select=CustomerID,FirstName,LastName,City,CountryCode_code&$orderby=FirstName
+
+###
+
+
+### 3.3 — Travels with status "Open"
+GET {{data}}/Travel?$filter=TravelStatus_code eq 'O'&$select=TravelID,Description,TotalPrice,CurrencyCode_code&$orderby=TotalPrice desc&$top=10
+
+###
+
+
+### 3.4 — Canceled travels sorted by total price
+GET {{data}}/Travel?$filter=TravelStatus_code eq 'X'&$orderby=TotalPrice desc&$select=TravelID,Description,TotalPrice,BookingFee
+
+###
+
+
+### 3.5 — Bookings with status "New" on a specific flight date
+GET {{data}}/Booking?$filter=BookingStatus_code eq 'N' and FlightDate eq 2025-02-14&$select=BookingUUID,BookingID,FlightDate,FlightPrice,ConnectionID&$orderby=BookingID&$top=10
+
+###
+
+
+### 3.6 — Travel agencies in Germany
+GET {{data}}/TravelAgency?$filter=CountryCode_code eq 'DE'&$select=AgencyID,Name,City&$orderby=City
+
+###
+
+
+### 3.7 — Travel agencies in the United States
+GET {{data}}/TravelAgency?$filter=CountryCode_code eq 'US'&$select=AgencyID,Name,City&$orderby=Name
+
+###
+
+
+### 3.8 — Airports in Japan
+GET {{data}}/Airport?$filter=CountryCode_code eq 'JP'&$select=AirportID,Name,City
+
+###
+
+
+### 3.9 — Flights on large aircraft (MaximumSeats > 300)
+GET {{data}}/Flight?$filter=MaximumSeats gt 300&$select=AirlineID,ConnectionID,FlightDate,PlaneType,MaximumSeats,OccupiedSeats&$orderby=MaximumSeats desc
+
+###
+
+
+### 3.10 — Expensive supplements (price over 10 EUR)
+GET {{data}}/Supplement?$filter=Price gt 10&$select=SupplementID,Description,Price,Type_code&$orderby=Price desc
+
+###
+
+
+### 3.11 — Meal supplements only
+GET {{data}}/Supplement?$filter=Type_code eq 'ML'&$select=SupplementID,Description,Price&$orderby=Price
+
+###
+
+
+### 3.12 — Beverage supplements only
+GET {{data}}/Supplement?$filter=Type_code eq 'BV'&$select=SupplementID,Description,Price&$orderby=Price
+
+###
+
+
+### 3.13 — Passengers whose name contains "Vrsic"
+GET {{data}}/Passenger?$filter=contains(LastName,'Vrsic')&$select=CustomerID,FirstName,LastName,City,CountryCode_code
+
+###
+
+
+### 3.14 — Pagination — page 2 of travels (skip 10, take 10)
+GET {{data}}/Travel?$orderby=TravelID&$skip=10&$top=10&$select=TravelID,Description,TotalPrice
+
+###
+
+
+### 3.15 — Flights priced above 5000 in any currency
+GET {{data}}/Flight?$filter=Price gt 5000&$select=AirlineID,ConnectionID,FlightDate,Price,CurrencyCode_code,PlaneType&$orderby=Price desc
+
+###
+
+
+
+##############################################################################
+#  §4  ASSOCIATION NAVIGATION ($expand M:1)
+#
+#  Expanding "belongs-to" relationships: many-to-one associations.
+##############################################################################
+
+
+### 4.1 — Travel with its travel agency
+GET {{data}}/Travel(TravelUUID='{{travel1_uuid}}')?$expand=to_Agency&$select=TravelID,Description,TotalPrice
+
+###
+
+
+### 4.2 — Travel with its customer (passenger)
+GET {{data}}/Travel(TravelUUID='{{travel1_uuid}}')?$expand=to_Customer&$select=TravelID,Description
+
+###
+
+
+### 4.3 — Travel with both agency AND customer
+GET {{data}}/Travel(TravelUUID='{{travel2_uuid}}')?$expand=to_Agency($select=Name,City),to_Customer($select=FirstName,LastName,EMailAddress)&$select=TravelID,Description,BeginDate,EndDate,TotalPrice
+
+###
+
+
+### 4.4 — Booking with its carrier (airline)
+GET {{data}}/Booking(BookingUUID='{{booking1_uuid}}')?$expand=to_Carrier&$select=BookingID,FlightDate,FlightPrice
+
+###
+
+
+### 4.5 — Booking with its customer
+GET {{data}}/Booking(BookingUUID='{{booking1_uuid}}')?$expand=to_Customer($select=FirstName,LastName,City)&$select=BookingID,FlightDate
+
+###
+
+
+### 4.6 — Booking with its flight
+GET {{data}}/Booking(BookingUUID='{{booking1_uuid}}')?$expand=to_Flight($select=PlaneType,MaximumSeats,OccupiedSeats,Price)&$select=BookingID,FlightDate,FlightPrice
+
+###
+
+
+### 4.7 — Flight with its airline
+GET {{data}}/Flight(AirlineID='SW',FlightDate=2025-02-14,ConnectionID='1537')?$expand=to_Airline&$select=Price,PlaneType,MaximumSeats,OccupiedSeats
+
+###
+
+
+### 4.8 — Flight with its connection (route details)
+GET {{data}}/Flight(AirlineID='SW',FlightDate=2025-02-14,ConnectionID='1537')?$expand=to_Connection&$select=Price,PlaneType
+
+###
+
+
+### 4.9 — FlightConnection with departure and destination airports
+GET {{data}}/FlightConnection(AirlineID='SW',ConnectionID='1537')?$expand=DepartureAirport,DestinationAirport&$select=DepartureTime,ArrivalTime,Distance,DistanceUnit
+
+###
+
+
+### 4.10 — FlightConnection with airline
+GET {{data}}/FlightConnection(AirlineID='EA',ConnectionID='0400')?$expand=to_Airline($select=Name),DepartureAirport($select=Name,City),DestinationAirport($select=Name,City)&$select=DepartureTime,ArrivalTime,Distance
+
+###
+
+
+### 4.11 — Supplement with its type
+GET {{data}}/Supplement(SupplementID='ML-0008')?$expand=Type&$select=Description,Price
+
+###
+
+
+### 4.12 — Booking with carrier, customer, AND flight (triple expand)
+GET {{data}}/Booking(BookingUUID='{{booking1_uuid}}')?$expand=to_Carrier($select=Name),to_Customer($select=FirstName,LastName),to_Flight($select=PlaneType,MaximumSeats)&$select=BookingID,FlightDate,FlightPrice,BookingStatus_code
+
+###
+
+
+### 4.13 — All open travels with their agencies (collection + expand)
+GET {{data}}/Travel?$filter=TravelStatus_code eq 'O'&$expand=to_Agency($select=Name,City)&$select=TravelID,Description,TotalPrice&$top=5&$orderby=TotalPrice desc
+
+###
+
+
+
+##############################################################################
+#  §5  COMPOSITION NAVIGATION ($expand 1:N)
+#
+#  Expanding "has-many" relationships: parent → children.
+#  Compositions define ownership — children can't exist without parent.
+##############################################################################
+
+
+### 5.1 — Travel with all its bookings (1:N composition)
+GET {{data}}/Travel(TravelUUID='{{travel1_uuid}}')?$expand=to_Booking&$select=TravelID,Description,TotalPrice
+
+###
+
+
+### 5.2 — Travel with bookings (filtered: only "New" bookings)
+GET {{data}}/Travel(TravelUUID='{{travel2_uuid}}')?$expand=to_Booking($filter=BookingStatus_code eq 'N')&$select=TravelID,Description
+
+###
+
+
+### 5.3 — Travel with bookings (only first 3, ordered by date)
+GET {{data}}/Travel(TravelUUID='{{travel2_uuid}}')?$expand=to_Booking($orderby=FlightDate;$top=3;$select=BookingID,FlightDate,FlightPrice,ConnectionID)&$select=TravelID,Description
+
+###
+
+
+### 5.4 — Booking with all its supplements (1:N composition)
+GET {{data}}/Booking(BookingUUID='82757221A8E4645C17002DF03754AB66')?$expand=to_BookSupplement&$select=BookingID,FlightDate,FlightPrice
+
+###
+
+
+### 5.5 — Multiple travels with their bookings (collection expand)
+GET {{data}}/Travel?$filter=TravelID le 5&$expand=to_Booking($select=BookingID,FlightDate,FlightPrice,BookingStatus_code)&$select=TravelID,Description,TotalPrice&$orderby=TravelID
+
+###
+
+
+### 5.6 — Travel with bookings + agency + customer (mixed expand)
+GET {{data}}/Travel(TravelUUID='{{travel2_uuid}}')?$expand=to_Agency($select=Name),to_Customer($select=FirstName,LastName),to_Booking($select=BookingID,FlightDate,FlightPrice,BookingStatus_code;$orderby=FlightDate)&$select=TravelID,BeginDate,EndDate,TotalPrice,Description
+
+###
+
+
+### 5.7 — Canceled travel with its bookings (status propagation check)
+GET {{data}}/Travel(TravelUUID='{{travel5_uuid}}')?$expand=to_Booking($select=BookingID,BookingStatus_code,FlightDate,FlightPrice)&$select=TravelID,Description,TravelStatus_code,TotalPrice
+
+###
+
+
+
+##############################################################################
+#  §6  NESTED ASSOCIATIONS (multi-level $expand)
+#
+#  Navigate through multiple M:1 associations in one query.
+#  Pattern: Entity → assoc1 → assoc2 → assoc3
+##############################################################################
+
+
+### 6.1 — Flight → Connection → both Airports
+#   Path: Flight.to_Connection.DepartureAirport + DestinationAirport
+GET {{data}}/Flight(AirlineID='EA',FlightDate=2025-02-15,ConnectionID='0400')?$expand=to_Connection($expand=DepartureAirport,DestinationAirport;$select=DepartureTime,ArrivalTime,Distance)&$select=Price,PlaneType,MaximumSeats,OccupiedSeats
+
+###
+
+
+### 6.2 — Booking → Flight → Connection → Airports (3 levels deep)
+GET {{data}}/Booking(BookingUUID='{{booking1_uuid}}')?$expand=to_Flight($expand=to_Connection($expand=DepartureAirport($select=Name,City),DestinationAirport($select=Name,City);$select=DepartureTime,ArrivalTime,Distance);$select=PlaneType)&$select=BookingID,FlightDate
+
+###
+
+
+### 6.3 — Booking → Flight → Connection + Airline (branching expand)
+GET {{data}}/Booking(BookingUUID='{{booking3_uuid}}')?$expand=to_Carrier($select=Name),to_Flight($expand=to_Airline($select=Name),to_Connection($expand=DepartureAirport($select=City),DestinationAirport($select=City)))&$select=BookingID,FlightDate,FlightPrice
+
+###
+
+
+### 6.4 — All flights with full route details (collection, nested expand)
+GET {{data}}/Flight?$filter=AirlineID eq 'GA'&$expand=to_Airline($select=Name),to_Connection($expand=DepartureAirport($select=Name,City,CountryCode_code),DestinationAirport($select=Name,City,CountryCode_code);$select=DepartureTime,ArrivalTime,Distance)&$select=FlightDate,Price,PlaneType,MaximumSeats,OccupiedSeats&$orderby=FlightDate
+
+###
+
+
+### 6.5 — BookingSupplement → Supplement → Type (association chain)
+GET {{data}}/BookingSupplement(BookSupplUUID='{{booksuppl1_uuid}}')?$expand=to_Supplement($expand=Type;$select=Description,Price),to_Booking($select=BookingID,FlightDate)&$select=BookingSupplementID,Price
+
+###
+
+
+### 6.6 — FlightConnection with airports including country details
+#   Path: FlightConnection → Airport → Country (nested)
+GET {{data}}/FlightConnection?$filter=Distance gt 8000&$expand=DepartureAirport($expand=CountryCode;$select=Name,City),DestinationAirport($expand=CountryCode;$select=Name,City),to_Airline($select=Name)&$select=ConnectionID,Distance,DistanceUnit,DepartureTime,ArrivalTime&$orderby=Distance desc
+
+###
+
+
+
+##############################################################################
+#  §7  DEEP COMPOSITION CHAINS
+#
+#  Travel ⟿ Booking ⟿ BookingSupplement → Supplement
+#  This is the deepest path in the model: 3 levels of ownership
+#  plus an association at the leaf.
+##############################################################################
+
+
+### 7.1 — Travel → Bookings → Supplements (full tree)
+GET {{data}}/Travel(TravelUUID='{{travel2_uuid}}')?$expand=to_Booking($expand=to_BookSupplement($expand=to_Supplement($select=Description,Price,Type_code));$select=BookingID,FlightDate,FlightPrice)&$select=TravelID,Description,TotalPrice
+
+###
+
+
+### 7.2 — Travel → Bookings + carriers → Supplements (composition + associations)
+GET {{data}}/Travel(TravelUUID='{{travel2_uuid}}')?$expand=to_Booking($expand=to_Carrier($select=Name),to_BookSupplement($expand=to_Supplement($select=Description));$select=BookingID,FlightDate,ConnectionID)&$select=TravelID,Description
+
+###
+
+
+### 7.3 — Full itinerary: Travel → (Agency + Customer + Bookings → everything)
+GET {{data}}/Travel(TravelUUID='{{travel8_uuid}}')?$expand=to_Agency($select=Name,City,CountryCode_code),to_Customer($select=FirstName,LastName,EMailAddress),to_Booking($orderby=FlightDate;$expand=to_Carrier($select=Name),to_Customer($select=FirstName,LastName),to_Flight($expand=to_Connection($expand=DepartureAirport($select=Name,City),DestinationAirport($select=Name,City));$select=PlaneType),to_BookSupplement($expand=to_Supplement($select=Description,Price)))&$select=TravelID,BeginDate,EndDate,BookingFee,TotalPrice,CurrencyCode_code,Description,TravelStatus_code
+
+###
+
+
+### 7.4 — Multiple travels with deep composition (collection)
+GET {{data}}/Travel?$filter=TravelID ge 1 and TravelID le 3&$expand=to_Booking($expand=to_BookSupplement($select=BookingSupplementID,Price;$expand=to_Supplement($select=Description));$select=BookingID,FlightDate,FlightPrice)&$select=TravelID,Description,TotalPrice&$orderby=TravelID
+
+###
+
+
+### 7.5 — Travel with bookings filtered by carrier + their supplements
+GET {{data}}/Travel(TravelUUID='{{travel2_uuid}}')?$expand=to_Booking($filter=to_Carrier_AirlineID eq 'GA';$expand=to_Carrier($select=Name),to_BookSupplement($expand=to_Supplement($select=Description,Price));$select=BookingID,FlightDate,ConnectionID)&$select=TravelID,Description
+
+###
+
+
+
+##############################################################################
+#  §8  DENORMALIZED VIEWS
+#
+#  Pre-joined views that flatten multi-level associations into
+#  single rows — designed for AI agents and dashboards.
+##############################################################################
+
+
+### 8.1 — FlightSchedule: all flights with route details (flat)
+GET {{data}}/FlightSchedule?$orderby=AirlineID,FlightDate&$top=20
+
+###
+
+
+### 8.2 — FlightSchedule: flights from Frankfurt
+GET {{data}}/FlightSchedule?$filter=DepartureAirportID eq 'FRA'&$select=AirlineName,ConnectionID,FlightDate,DepartureCity,ArrivalCity,DepartureTime,ArrivalTime,Price,AvailableSeats
+
+###
+
+
+### 8.3 — FlightSchedule: flights to Tokyo (Narita)
+GET {{data}}/FlightSchedule?$filter=ArrivalAirportID eq 'NRT'&$select=AirlineName,FlightDate,DepartureCity,ArrivalCity,Price,CurrencyCode,PlaneType,AvailableSeats
+
+###
+
+
+### 8.4 — FlightSchedule: flights with available seats, sorted by availability
+GET {{data}}/FlightSchedule?$filter=AvailableSeats gt 0&$select=AirlineName,FlightDate,DepartureCity,ArrivalCity,AvailableSeats,MaximumSeats,PlaneType&$orderby=AvailableSeats desc
+
+###
+
+
+### 8.5 — FlightSchedule: Sunset Wings flights only
+GET {{data}}/FlightSchedule?$filter=AirlineID eq 'SW'&$select=ConnectionID,FlightDate,DepartureCity,ArrivalCity,Price,CurrencyCode,PlaneType,AvailableSeats&$orderby=FlightDate
+
+###
+
+
+### 8.6 — BookingOverview: all bookings (flat, with customer + route)
+GET {{data}}/BookingOverview?$top=20&$orderby=FlightDate&$select=TravelID,BookingID,FlightDate,AirlineName,CustomerLastName,DepartureCity,ArrivalCity,FlightPrice,Status
+
+###
+
+
+### 8.7 — BookingOverview: bookings with "Booked" status
+GET {{data}}/BookingOverview?$filter=Status eq 'B'&$select=TravelID,BookingID,CustomerFirstName,CustomerLastName,AirlineName,DepartureCity,ArrivalCity,FlightDate&$orderby=FlightDate
+
+###
+
+
+### 8.8 — BookingOverview: bookings on Green Albatros
+GET {{data}}/BookingOverview?$filter=AirlineID eq 'GA'&$select=TravelID,BookingID,CustomerLastName,FlightDate,DepartureCity,ArrivalCity,PlaneType,FlightPrice&$orderby=FlightDate
+
+###
+
+
+### 8.9 — BookingOverview: bookings departing from Miami
+GET {{data}}/BookingOverview?$filter=DepartureAirportID eq 'MIA'&$select=BookingID,AirlineName,CustomerLastName,DepartureCity,ArrivalCity,FlightDate,FlightPrice,Status
+
+###
+
+
+### 8.10 — TravelSummary: all travels (flat, with agency + customer)
+GET {{data}}/TravelSummary?$top=20&$orderby=TravelID&$select=TravelID,Description,Status,AgencyName,CustomerLastName,TotalPrice,CurrencyCode,BeginDate,EndDate
+
+###
+
+
+### 8.11 — TravelSummary: accepted travels only
+GET {{data}}/TravelSummary?$filter=Status eq 'A'&$select=TravelID,Description,AgencyName,CustomerLastName,TotalPrice,BeginDate,EndDate&$orderby=TotalPrice desc
+
+###
+
+
+### 8.12 — TravelSummary: travels by a specific agency
+GET {{data}}/TravelSummary?$filter=AgencyID eq '070007'&$select=TravelID,Description,AgencyName,CustomerLastName,TotalPrice,Status&$orderby=TravelID
+
+###
+
+
+### 8.13 — TravelSummary: search by customer email domain
+GET {{data}}/TravelSummary?$filter=contains(CustomerEmail,'.us')&$select=TravelID,CustomerFirstName,CustomerLastName,CustomerEmail,AgencyName,Status
+
+###
+
+
+### 8.14 — TravelSummary: high-value travels (> $5000)
+GET {{data}}/TravelSummary?$filter=TotalPrice gt 5000&$select=TravelID,Description,TotalPrice,CurrencyCode,AgencyName,CustomerLastName,Status&$orderby=TotalPrice desc
+
+###
+
+
+
+##############################################################################
+#  §9  AGGREGATION, COUNTING, AND GROUPING
+#
+#  $count, $apply, inline counts.
+##############################################################################
+
+
+### 9.1 — Count all travels
+GET {{data}}/Travel/$count
+
+###
+
+
+### 9.2 — Count open travels
+GET {{data}}/Travel/$count?$filter=TravelStatus_code eq 'O'
+
+###
+
+
+### 9.3 — Count all bookings
+GET {{data}}/Booking/$count
+
+###
+
+
+### 9.4 — Count canceled bookings
+GET {{data}}/Booking/$count?$filter=BookingStatus_code eq 'X'
+
+###
+
+
+### 9.5 — Count all flights
+GET {{data}}/Flight/$count
+
+###
+
+
+### 9.6 — Count all passengers
+GET {{data}}/Passenger/$count
+
+###
+
+
+### 9.7 — Count airports per country (manual: one query per country)
+# Germany
+GET {{data}}/Airport/$count?$filter=CountryCode_code eq 'DE'
+
+###
+
+# United States
+GET {{data}}/Airport/$count?$filter=CountryCode_code eq 'US'
+
+###
+
+# Japan
+GET {{data}}/Airport/$count?$filter=CountryCode_code eq 'JP'
+
+###
+
+
+### 9.8 — Count travel agencies
+GET {{data}}/TravelAgency/$count
+
+###
+
+
+### 9.9 — Count supplements by type
+# Beverages
+GET {{data}}/Supplement/$count?$filter=Type_code eq 'BV'
+
+###
+
+# Meals
+GET {{data}}/Supplement/$count?$filter=Type_code eq 'ML'
+
+###
+
+# Luggage
+GET {{data}}/Supplement/$count?$filter=Type_code eq 'LU'
+
+###
+
+
+### 9.10 — Inline count with results ($count=true)
+GET {{data}}/Travel?$count=true&$filter=TravelStatus_code eq 'O'&$top=5&$select=TravelID,Description,TotalPrice&$orderby=TotalPrice desc
+
+###
+
+
+### 9.11 — Count bookings per flight date (group manually)
+GET {{data}}/Booking?$filter=FlightDate eq 2025-02-14&$select=BookingUUID&$count=true&$top=0
+
+###
+
+GET {{data}}/Booking?$filter=FlightDate eq 2025-12-12&$select=BookingUUID&$count=true&$top=0
+
+###
+
+
+### 9.12 — Count booking supplements
+GET {{data}}/BookingSupplement/$count
+
+###
+
+
+### 9.13 — Count flight connections
+GET {{data}}/FlightConnection/$count
+
+###
+
+
+### 9.14 — Count FlightSchedule entries (denormalized view)
+GET {{data}}/FlightSchedule/$count
+
+###
+
+
+### 9.15 — Count BookingOverview entries
+GET {{data}}/BookingOverview/$count
+
+###
+
+
+
+##############################################################################
+#  §10  COMPLEX FILTERS
+#
+#  Multi-condition, string functions, date ranges, nested path filters.
+##############################################################################
+
+
+### 10.1 — Multiple conditions with AND
+GET {{data}}/Travel?$filter=TravelStatus_code eq 'O' and TotalPrice gt 2000 and TotalPrice lt 5000&$select=TravelID,Description,TotalPrice,TravelStatus_code&$orderby=TotalPrice desc
+
+###
+
+
+### 10.2 — OR conditions
+GET {{data}}/Airport?$filter=CountryCode_code eq 'DE' or CountryCode_code eq 'FR'&$select=AirportID,Name,City,CountryCode_code&$orderby=CountryCode_code,City
+
+###
+
+
+### 10.3 — String function: contains (case-sensitive)
+GET {{data}}/Travel?$filter=contains(Description,'Business Trip')&$select=TravelID,Description,TotalPrice&$orderby=TravelID
+
+###
+
+
+### 10.4 — String function: startswith
+GET {{data}}/Passenger?$filter=startswith(LastName,'Buch')&$select=CustomerID,FirstName,LastName,City
+
+###
+
+
+### 10.5 — String function: endswith
+GET {{data}}/TravelAgency?$filter=endswith(EMailAddress,'.sap')&$select=AgencyID,Name,EMailAddress&$top=10
+
+###
+
+
+### 10.6 — Date range filter (February 2025 flights)
+GET {{data}}/Flight?$filter=FlightDate ge 2025-02-01 and FlightDate le 2025-02-28&$select=AirlineID,ConnectionID,FlightDate,Price,CurrencyCode_code,PlaneType&$orderby=FlightDate
+
+###
+
+
+### 10.7 — Date range on TravelSummary
+GET {{data}}/TravelSummary?$filter=BeginDate ge 2025-06-01 and EndDate le 2025-12-31&$select=TravelID,Description,BeginDate,EndDate,AgencyName,Status&$orderby=BeginDate
+
+###
+
+
+### 10.8 — Nested path filter: Travel filtered by agency country
+GET {{data}}/Travel?$filter=to_Agency/CountryCode_code eq 'US'&$expand=to_Agency($select=Name,City,CountryCode_code)&$select=TravelID,Description,TotalPrice&$orderby=TotalPrice desc&$top=10
+
+###
+
+
+### 10.9 — Nested path filter: Travel filtered by customer country
+GET {{data}}/Travel?$filter=to_Customer/CountryCode_code eq 'DE'&$expand=to_Customer($select=FirstName,LastName,City)&$select=TravelID,Description,TotalPrice&$top=10
+
+###
+
+
+### 10.10 — Nested path filter: Booking filtered by airline name
+GET {{data}}/Booking?$filter=to_Carrier/Name eq 'Green Albatros'&$expand=to_Carrier($select=Name)&$select=BookingID,FlightDate,FlightPrice,BookingStatus_code&$top=10
+
+###
+
+
+### 10.11 — Nested path filter: Booking filtered by connection's departure airport
+GET {{data}}/Booking?$filter=to_Flight/to_Connection/DepartureAirport_AirportID eq 'SFO'&$expand=to_Carrier($select=Name)&$select=BookingID,FlightDate,FlightPrice,ConnectionID&$top=10
+
+###
+
+
+### 10.12 — NOT filter: travels that are NOT canceled
+GET {{data}}/Travel?$filter=TravelStatus_code ne 'X'&$select=TravelID,Description,TotalPrice,TravelStatus_code&$orderby=TravelID&$top=10
+
+###
+
+
+### 10.13 — Complex combined: accepted travels from US agencies with bookings
+GET {{data}}/Travel?$filter=TravelStatus_code eq 'A' and to_Agency/CountryCode_code eq 'US'&$expand=to_Agency($select=Name,City),to_Booking($select=BookingID,FlightDate,FlightPrice;$top=3)&$select=TravelID,Description,TotalPrice
+
+###
+
+
+### 10.14 — Filter on denormalized view: long-haul flights (> 5000 km)
+GET {{data}}/FlightSchedule?$filter=Distance gt 5000&$select=AirlineName,DepartureCity,ArrivalCity,Distance,DistanceUnit,FlightDate,Price,CurrencyCode&$orderby=Distance desc
+
+###
+
+
+### 10.15 — Filter on BookingOverview: customer name contains partial match
+GET {{data}}/BookingOverview?$filter=contains(CustomerLastName,'Buch')&$select=TravelID,BookingID,CustomerFirstName,CustomerLastName,AirlineName,DepartureCity,ArrivalCity
+
+###
+
+
+### 10.16 — Multiple nested path filters combined
+GET {{data}}/Travel?$filter=to_Agency/CountryCode_code eq 'GB' and TotalPrice gt 1000&$expand=to_Agency($select=Name,City),to_Customer($select=FirstName,LastName)&$select=TravelID,Description,TotalPrice&$orderby=TotalPrice desc
+
+###
+
+
+
+##############################################################################
+#  §11  PROJECTION ($select + $expand combinations)
+#
+#  Control exactly which fields are returned — important for performance
+#  and for AI agents that process structured output.
+##############################################################################
+
+
+### 11.1 — Travel: minimal projection (ID + description only)
+GET {{data}}/Travel?$select=TravelID,Description&$top=10&$orderby=TravelID
+
+###
+
+
+### 11.2 — Travel: financial fields only
+GET {{data}}/Travel?$select=TravelID,BookingFee,TotalPrice,CurrencyCode_code&$filter=TotalPrice gt 0&$orderby=TotalPrice desc&$top=10
+
+###
+
+
+### 11.3 — Booking: select with nested expand select
+GET {{data}}/Booking?$select=BookingID,FlightDate,FlightPrice&$expand=to_Carrier($select=Name),to_Customer($select=FirstName,LastName)&$top=10&$orderby=FlightDate
+
+###
+
+
+### 11.4 — Flight: technical fields (plane + capacity)
+GET {{data}}/Flight?$select=AirlineID,ConnectionID,FlightDate,PlaneType,MaximumSeats,OccupiedSeats&$orderby=AirlineID,FlightDate
+
+###
+
+
+### 11.5 — FlightConnection: route geometry
+GET {{data}}/FlightConnection?$select=AirlineID,ConnectionID,Distance,DistanceUnit,DepartureTime,ArrivalTime&$expand=DepartureAirport($select=AirportID,City),DestinationAirport($select=AirportID,City)&$orderby=Distance desc
+
+###
+
+
+### 11.6 — TravelSummary: contact info projection
+GET {{data}}/TravelSummary?$select=TravelID,CustomerFirstName,CustomerLastName,CustomerEmail,AgencyName&$top=10
+
+###
+
+
+### 11.7 — Deep projection: Travel with selective booking fields
+GET {{data}}/Travel?$filter=TravelID le 5&$select=TravelID,TotalPrice&$expand=to_Booking($select=BookingID,FlightPrice,BookingStatus_code)&$orderby=TravelID
+
+###
+
+
+### 11.8 — Airport: geography-only projection
+GET {{data}}/Airport?$select=AirportID,City,CountryCode_code&$orderby=CountryCode_code,City
+
+###
+
+
+
+##############################################################################
+#  §12  TRAVELSERVICE QUERIES (processor endpoint, auth required)
+#
+#  These hit the main TravelService at /processor which has
+#  draft-enabled CRUD operations and requires authentication.
+##############################################################################
+
+
+### 12.1 — List all travels (requires auth)
+GET {{proc}}/Travel?$top=5&$orderby=TravelID&$select=TravelID,Description,TotalPrice,TravelStatus_code
 {{alice}}
+
+###
+
+
+### 12.2 — Get a specific travel by UUID (active entity)
+GET {{proc}}/Travel(TravelUUID='{{travel1_uuid}}',IsActiveEntity=true)
+{{alice}}
+
+###
+
+
+### 12.3 — Travel with bookings via processor
+GET {{proc}}/Travel(TravelUUID='{{travel2_uuid}}',IsActiveEntity=true)?$expand=to_Booking($select=BookingID,FlightDate,FlightPrice,BookingStatus_code)
+{{alice}}
+
+###
+
+
+### 12.4 — Travel with agency and customer via processor
+GET {{proc}}/Travel(TravelUUID='{{travel8_uuid}}',IsActiveEntity=true)?$expand=to_Agency($select=Name),to_Customer($select=FirstName,LastName)&$select=TravelID,Description,TotalPrice
+{{alice}}
+
+###
+
+
+### 12.5 — Deep expand via processor (full itinerary)
+GET {{proc}}/Travel(TravelUUID='{{travel2_uuid}}',IsActiveEntity=true)?$expand=to_Booking($expand=to_Carrier($select=Name),to_Flight($expand=to_Connection($expand=DepartureAirport($select=City),DestinationAirport($select=City))))
+{{alice}}
+
+###
+
+
+### 12.6 — Filter travels by status via processor
+GET {{proc}}/Travel?$filter=TravelStatus_code eq 'A'&$select=TravelID,Description,TotalPrice,TravelStatus_code&$orderby=TotalPrice desc
+{{alice}}
+
+###
+
+
+### 12.7 — Booking with supplements via processor (composition chain)
+GET {{proc}}/Travel(TravelUUID='{{travel2_uuid}}',IsActiveEntity=true)?$expand=to_Booking($expand=to_BookSupplement($expand=to_Supplement($select=Description,Price));$select=BookingID,FlightDate)
+{{alice}}
+
 ###

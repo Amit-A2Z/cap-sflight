@@ -205,13 +205,15 @@ claude
 
 Now ask any question about your flight data!
 
-### Available Tools (12 total)
+### Available Tools (14 total)
 
 | Category | Tools | What they do |
 |----------|-------|-------------|
 | **Data Query** (5) | `sflight_query`, `sflight_flights`, `sflight_bookings`, `sflight_travels`, `sflight_stats` | Query flights, bookings, travels with smart filters |
 | **Schema** (3) | `sflight_schema`, `sflight_entity`, `sflight_diagram` | Explore the data model, generate ER diagrams |
 | **HANA** (2) | `sflight_hana_tables`, `sflight_hana_sql` | Query the deployed HANA database |
+| **Relationships** (1) | `sflight_relationships` | Entity navigation, $expand recipes for multi-hop queries |
+| **Analysis** (1) | `sflight_analyze` | Client-side GROUP BY, SUM, AVG, DISTINCT, cross-field comparison |
 | **Project** (2) | `sflight_info`, `sflight_guide` | Project overview, tool recommendations |
 
 ### DataService API
@@ -231,7 +233,7 @@ These views are pre-joined for common queries — no `$expand` needed by AI agen
 ```mermaid
 graph TB
     User[You - Ask Questions] --> AI[AI Assistant - Claude Code]
-    AI --> SF[sflight MCP Server - 12 tools]
+    AI --> SF[sflight MCP Server - 14 tools]
     AI --> CAP[cap-tools MCP - 12 tools]
     AI --> HANA[hana-cli MCP - 111+ tools]
     SF --> OData[DataService OData API]
